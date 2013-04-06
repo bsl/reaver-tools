@@ -1,0 +1,64 @@
+#!/usr/bin/env ruby
+
+require "reaver-tools"
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+def usage(n, s=nil)
+  puts(s || "usage: <file-name>")
+  exit(n)
+end
+
+def get_args
+  usage(0) if ARGV.length == 0
+  usage(1) if ARGV.length != 1
+  ARGV[0]
+end
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+class Processor
+  def initialize(conf)
+    @cache_dir = conf["cache_dir"]
+  end
+
+  def run(file_name)
+    File.open(file_name, "r") do |file|
+      process(file)
+    end
+  end
+
+  private
+
+  def process(source)
+    divider = (["#"] * 40).join(" ")
+    pid     = nil
+
+    Signal.trap("INT") { Process.kill("TERM", pid) }
+
+    source.each_line do |line|
+      line.strip!
+      next if line == "" or line[0] == "#"
+      bssid, channel, essid = line.split(" ", 3)
+
+      puts divider
+      puts "# #{bssid} channel #{channel} #{essid.inspect} #{ReaverTools.make_session_file_name(bssid)}"
+
+      if File.exist?(ReaverTools.make_disabled_session_path(@cache_dir, bssid))
+        puts "# skipping"
+        puts
+        next
+      end
+
+      pid = Process.spawn("reaver-run #{channel} #{bssid}")
+      Process.waitpid(pid)
+    end
+  end
+end
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+conf = ReaverTools.load_conf
+file_name = get_args
+
+Processor.new(conf).run(file_name)

@@ -1,0 +1,11 @@
+interface: "wlp0s26u1u2"
+cache_dir: "/home/foo/var/reaver"
+
+list:
+  num_sec: 60
+  temp_name: "reaver-list-temp"
+
+run:
+  extra_args:
+    - "--delay=0"
+    - "--dh-small"

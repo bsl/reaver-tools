@@ -1,0 +1,83 @@
+#!/usr/bin/env ruby
+
+require "csv"
+require "fileutils"
+
+require "reaver-tools"
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+def usage(n, s=nil)
+  puts(s || "usage: <output-file-name>")
+  exit(n)
+end
+
+def get_args
+  usage(0) if ARGV.length == 0
+  usage(1) if ARGV.length != 1
+  ARGV[0]
+end
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+class Lister
+  def initialize(conf)
+    @interface = conf["interface"]
+    @temp_name = conf["list"]["temp_name"]
+    @num_sec   = conf["list"]["num_sec"]
+  end
+
+  def run(output_file_name)
+    input_file_name = nil
+    begin
+      run_airodump
+      input_file_name = get_input_file_name
+      File.open(input_file_name, "rb") do |source|
+        File.open(output_file_name, "w+") do |destination|
+          make_list(source, destination)
+        end
+      end
+    ensure
+      FileUtils.rm_f(input_file_name) if input_file_name
+    end
+  end
+
+  private
+
+  def run_airodump
+    pid = Process.spawn("airodump-ng --write #{@temp_name} --output-format csv #{@interface}")
+    sleep @num_sec
+    Process.kill("TERM", pid)
+    Process.waitpid(pid)
+  end
+
+  def get_input_file_name
+    file_name = Dir.glob("#{@temp_name}-*.csv").sort.last
+    raise "airodump-ng didn't produce an output file?" \
+      unless file_name
+    file_name
+  end
+
+  def make_list(source, destination)
+    CSV::parse(source)
+    .drop(2)
+    .take_while { |a| a != []                                   }
+    .map        { |a| a.values_at(0, 3, 5, 8, 13)               }
+    .map        { |a| a.map(&:strip)                            }
+    .map        { |b,n,c,p,e| [b, n.to_i(10), c, p.to_i(10), e] }
+    .select     { |_,n,_,_,_| (1..11).include?(n)               }
+    .select     { |_,_,c,_,_| c =~ /WPA/                        }
+    .sort       { |a,b| b[3] <=> a[3]                           }
+    .map        { |a| a.values_at(0, 1, 4)                      }
+    .each do |bssid,channel,essid|
+      line = [bssid, channel, essid].join(" ")
+      destination.puts(line)
+    end
+  end
+end
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+conf = ReaverTools.load_conf
+output_file_name = get_args
+Lister.new(conf).run(output_file_name)

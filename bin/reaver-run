@@ -1,0 +1,68 @@
+#!/usr/bin/env ruby
+
+require "reaver-tools"
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+def usage(n, s=nil)
+  puts(s || "usage: <channel> <bssid>")
+  exit(n)
+end
+
+BSSID_RE = Regexp.new (["[0-9a-fA-F]{2}"] * 6).join(":")
+
+def get_args
+  usage(0) if ARGV.length == 0
+  usage(1) if ARGV.length != 2
+
+  channel = ARGV[0].to_i(10)
+  usage(1, "bad channel '#{ARGV[0]}'") \
+    unless (1..11).include?(channel)
+
+  bssid = ARGV[1]
+  usage(1, "bad BSSID '#{ARGV[1]}'") \
+    unless bssid.match(BSSID_RE)
+
+  [channel, bssid]
+end
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+class Runner
+  def initialize(conf)
+    @interface  = conf["interface"]
+    @cache_dir  = conf["cache_dir"]
+    @extra_args = conf["run"]["extra_args"]
+  end
+
+  def run(channel, bssid)
+    ensure_cache_dir_present
+    command = make_command(channel, bssid)
+    system command
+  end
+
+  private
+
+  def ensure_cache_dir_present
+    FileUtils.mkdir_p(@cache_dir) \
+      unless Dir.exist?(@cache_dir)
+  end
+
+  def make_command(channel, bssid)
+    args = [
+      "reaver",
+      "--verbose",
+      "--interface=#{@interface}",
+      "--session=#{ReaverTools.make_session_path(@cache_dir, bssid)}",
+      "--channel=#{channel}",
+      "--bssid=#{bssid}"
+    ]
+    (args + @extra_args).join(" ")
+  end
+end
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+conf = ReaverTools.load_conf
+channel, bssid = get_args
+Runner.new(conf).run(channel, bssid)
